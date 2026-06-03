@@ -464,7 +464,7 @@
     let activeCategory = "全部";
     let query = "";
     let updateStates = {};
-    const updateCacheKey = "worldblogs_recent_updates_v1";
+    const updateCacheKey = "worldblogs_recent_updates_v2";
     const cacheMaxAge = 30 * 60 * 1000;
     const recentWindowMs = 24 * 60 * 60 * 1000;
 
@@ -666,7 +666,7 @@
         return `<div class="update-row"><span class="update-pill stale">24h 暂无更新</span></div>`;
       }
       if (state.status === "failed") {
-        return `<div class="update-row"><span class="update-pill failed">暂未取到更新</span></div>`;
+        return `<div class="update-row"><span class="update-pill failed">未能判断更新</span></div>`;
       }
       return `<div class="update-row"><span class="update-pill checking">正在检查更新</span></div>`;
     }
@@ -776,8 +776,79 @@
       } catch (error) {}
     }
 
-    function proxiedUrl(url) {
-      return `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+    async function loadRemoteUpdates() {
+      try {
+        const response = await fetch(`updates.json?t=${Date.now()}`, { cache: "no-store" });
+        if (!response.ok) return false;
+        const payload = await response.json();
+        const generatedAt = Date.parse(payload.generatedAt || "");
+        const freshEnough = Number.isFinite(generatedAt) && Date.now() - generatedAt < 8 * 60 * 60 * 1000;
+        if (!freshEnough || !payload.states || typeof payload.states !== "object") return false;
+        updateStates = payload.states;
+        saveUpdateCache();
+        renderList();
+        return true;
+      } catch (error) {
+        return false;
+      }
+    }
+
+    function proxyUrls(url) {
+      return [
+        url,
+        `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+        `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+        `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+        `https://corsproxy.io/?${encodeURIComponent(url)}`
+      ];
+    }
+
+    function rssJsonUrl(url) {
+      return `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}`;
+    }
+
+    function jinaReaderUrl(url) {
+      return `https://r.jina.ai/${url}`;
+    }
+
+    function uniqueUrls(urls) {
+      return [...new Set((urls || []).filter(Boolean))];
+    }
+
+    function commonFeedCandidates(source) {
+      const url = new URL(source.url);
+      const origin = url.origin;
+      const pathFeed = new URL("feed", source.url.endsWith("/") ? source.url : `${source.url}/`).href;
+      return uniqueUrls([
+        pathFeed,
+        `${origin}/feed/`,
+        `${origin}/feed`,
+        `${origin}/rss.xml`,
+        `${origin}/atom.xml`,
+        `${origin}/feed.xml`
+      ]);
+    }
+
+    function normalizedDateText(text) {
+      return String(text || "")
+        .replace(/[年月]/g, "-")
+        .replace(/日/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+
+    function dateCandidatesFromText(text) {
+      const value = normalizedDateText(text);
+      const patterns = [
+        /\b20\d{2}[-/]\d{1,2}[-/]\d{1,2}(?:[T\s]\d{1,2}:\d{2}(?::\d{2})?(?:Z|[+-]\d{2}:?\d{2})?)?\b/g,
+        /\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},?\s+20\d{2}\b/gi,
+        /\b\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?,?\s+20\d{2}\b/gi
+      ];
+      return patterns.flatMap(pattern => [...value.matchAll(pattern)].map(match => {
+        const raw = match[0].replace(/\bSept\b/i, "Sep");
+        const parsed = Date.parse(raw);
+        return Number.isFinite(parsed) ? parsed : null;
+      })).filter(Boolean);
     }
 
     async function fetchWithTimeout(url, timeout = 11000) {
@@ -792,17 +863,47 @@
       }
     }
 
-    async function fetchFeedText(feedUrl) {
-      const attempts = [feedUrl, proxiedUrl(feedUrl)];
+    async function fetchJsonWithTimeout(url, timeout = 11000) {
+      const text = await fetchWithTimeout(url, timeout);
+      return JSON.parse(text);
+    }
+
+    async function fetchTextFromAny(url) {
+      const attempts = proxyUrls(url);
       let lastError;
-      for (const url of attempts) {
+      for (const attempt of attempts) {
         try {
-          return await fetchWithTimeout(url);
+          const text = await fetchWithTimeout(attempt);
+          if (attempt.includes("api.allorigins.win/get?url=")) {
+            try {
+              const payload = JSON.parse(text);
+              return payload.contents || text;
+            } catch (error) {
+              return text;
+            }
+          }
+          return text;
         } catch (error) {
           lastError = error;
         }
       }
-      throw lastError || new Error("无法读取 feed");
+      throw lastError || new Error("无法读取内容");
+    }
+
+    async function fetchFeedItems(feedUrl, sourceUrl) {
+      try {
+        const json = await fetchJsonWithTimeout(rssJsonUrl(feedUrl));
+        if (json && Array.isArray(json.items) && json.items.length) {
+          return json.items.map(item => ({
+            title: item.title || "",
+            link: item.link || sourceUrl,
+            publishedAt: Date.parse(item.pubDate || item.pubdate || item.published || item.updated || "")
+          })).filter(item => item.title && Number.isFinite(item.publishedAt))
+            .sort((a, b) => b.publishedAt - a.publishedAt);
+        }
+      } catch (error) {}
+      const xml = await fetchTextFromAny(feedUrl);
+      return parseFeed(xml, sourceUrl);
     }
 
     function nodeText(node, selectors) {
@@ -839,33 +940,236 @@
         .sort((a, b) => b.publishedAt - a.publishedAt);
     }
 
+    function flattenJsonLd(node) {
+      if (!node) return [];
+      if (Array.isArray(node)) return node.flatMap(flattenJsonLd);
+      if (typeof node !== "object") return [];
+      return [
+        node,
+        ...flattenJsonLd(node["@graph"]),
+        ...flattenJsonLd(node.itemListElement),
+        ...flattenJsonLd(node.mainEntity)
+      ];
+    }
+
+    function parseJsonLdDates(doc, sourceUrl) {
+      const items = [];
+      const base = new URL(sourceUrl);
+      doc.querySelectorAll('script[type="application/ld+json"]').forEach(script => {
+        try {
+          const raw = JSON.parse(script.textContent || "{}");
+          flattenJsonLd(raw).forEach(node => {
+            const date = node.datePublished || node.dateModified || node.uploadDate;
+            const title = node.headline || node.name || node.title || (node.item && node.item.name);
+            const rawUrl = typeof node.url === "string" ? node.url : (node.mainEntityOfPage && node.mainEntityOfPage["@id"]);
+            const publishedAt = Date.parse(date || "");
+            if (title && Number.isFinite(publishedAt)) {
+              let link = rawUrl || sourceUrl;
+              try { link = new URL(link, base).href; } catch (error) {}
+              items.push({ title, link, publishedAt });
+            }
+          });
+        } catch (error) {}
+      });
+      return items;
+    }
+
+    function discoverFeedUrlsFromHtml(htmlText, sourceUrl) {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(htmlText, "text/html");
+      const base = new URL(sourceUrl);
+      const feeds = [];
+      doc.querySelectorAll('link[rel~="alternate"][href]').forEach(link => {
+        const type = `${link.getAttribute("type") || ""} ${link.getAttribute("title") || ""}`.toLowerCase();
+        const href = link.getAttribute("href");
+        if (!href || !/(rss|atom|feed|json)/.test(type + href.toLowerCase())) return;
+        try { feeds.push(new URL(href, base).href); } catch (error) {}
+      });
+      return uniqueUrls(feeds);
+    }
+
+    async function discoverFeedUrls(source) {
+      const htmlCandidates = [source.url, ...(source.fallbackPages || [])];
+      const discovered = [];
+      for (const pageUrl of htmlCandidates) {
+        try {
+          const html = await fetchTextFromAny(pageUrl);
+          discovered.push(...discoverFeedUrlsFromHtml(html, pageUrl));
+        } catch (error) {}
+      }
+      return uniqueUrls(discovered);
+    }
+
+    function nearestArticle(node) {
+      let current = node;
+      for (let i = 0; i < 6 && current; i++) {
+        if (current.matches && current.matches("article, li, section, div")) return current;
+        current = current.parentElement;
+      }
+      return node.parentElement || node;
+    }
+
+    function parseHtmlLatest(htmlText, sourceUrl) {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(htmlText, "text/html");
+      const base = new URL(sourceUrl);
+      const items = parseJsonLdDates(doc, sourceUrl);
+      const metaDate = doc.querySelector([
+        'meta[property="article:published_time"]',
+        'meta[property="article:modified_time"]',
+        'meta[property="og:updated_time"]',
+        'meta[name="article:published_time"]',
+        'meta[name="pubdate"]',
+        'meta[name="publishdate"]',
+        'meta[name="date"]',
+        'meta[name="dc.date"]',
+        'meta[name="parsely-pub-date"]'
+      ].join(", "));
+      const metaTitle = doc.querySelector('meta[property="og:title"], meta[name="twitter:title"]');
+      if (metaDate && metaDate.content) {
+        const publishedAt = Date.parse(metaDate.content);
+        if (Number.isFinite(publishedAt)) {
+          items.push({
+            title: (metaTitle && metaTitle.content) || doc.title || host(sourceUrl),
+            link: sourceUrl,
+            publishedAt
+          });
+        }
+      }
+      doc.querySelectorAll("article, li, section, [class*='post'], [class*='article'], [class*='entry'], [class*='card']").forEach(root => {
+        const text = root.textContent || "";
+        const dates = dateCandidatesFromText(text).filter(time => time <= Date.now() + 2 * 24 * 60 * 60 * 1000);
+        if (!dates.length) return;
+        const publishedAt = Math.max(...dates);
+        const linkNode = root.querySelector("a[href]");
+        const titleNode = root.querySelector("h1, h2, h3, [class*='title'], a[href]");
+        const title = titleNode ? titleNode.textContent.replace(/\s+/g, " ").trim() : "";
+        if (!title || title.length < 4 || title.length > 160) return;
+        let link = linkNode ? linkNode.getAttribute("href") : sourceUrl;
+        try { link = new URL(link, base).href; } catch (error) {}
+        items.push({ title, link, publishedAt });
+      });
+      doc.querySelectorAll("time[datetime], time").forEach(timeNode => {
+        const rawDate = timeNode.getAttribute("datetime") || timeNode.textContent;
+        const publishedAt = Date.parse(rawDate || "") || Math.max(...dateCandidatesFromText(rawDate));
+        if (!Number.isFinite(publishedAt)) return;
+        const root = nearestArticle(timeNode);
+        const linkNode = root.querySelector("a[href]") || doc.querySelector("a[href]");
+        let link = linkNode ? linkNode.getAttribute("href") : sourceUrl;
+        try { link = new URL(link, base).href; } catch (error) {}
+        const titleNode = root.querySelector("h1, h2, h3, a[href]") || linkNode;
+        const title = titleNode ? titleNode.textContent.replace(/\s+/g, " ").trim() : doc.title;
+        if (title) items.push({ title, link, publishedAt });
+      });
+      return items.filter(item => item.title && Number.isFinite(item.publishedAt))
+        .sort((a, b) => b.publishedAt - a.publishedAt);
+    }
+
+    function parseReaderLatest(text, sourceUrl) {
+      const lines = text.split(/\n+/).map(line => line.trim()).filter(Boolean);
+      const items = [];
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const dateMatches = dateCandidatesFromText(line);
+        if (!dateMatches.length) continue;
+        const publishedAt = Math.max(...dateMatches);
+        if (!Number.isFinite(publishedAt)) continue;
+        let title = "";
+        let link = sourceUrl;
+        for (let j = Math.max(0, i - 4); j <= Math.min(lines.length - 1, i + 2); j++) {
+          const linkMatch = lines[j].match(/\[([^\]]{4,120})\]\((https?:\/\/[^)]+)\)/);
+          if (linkMatch) {
+            title = linkMatch[1];
+            link = linkMatch[2];
+            break;
+          }
+          if (!title && lines[j].length > 8 && lines[j].length < 120 && !dateCandidatesFromText(lines[j]).length) {
+            title = lines[j].replace(/^#+\s*/, "");
+          }
+        }
+        if (title) items.push({ title, link, publishedAt });
+      }
+      return items.sort((a, b) => b.publishedAt - a.publishedAt);
+    }
+
+    async function fetchPageLatest(source) {
+      const htmlCandidates = [source.url, ...(source.fallbackPages || [])];
+      for (const pageUrl of htmlCandidates) {
+        try {
+          const html = await fetchTextFromAny(pageUrl);
+          const items = parseHtmlLatest(html, pageUrl);
+          if (items.length) return items;
+        } catch (error) {}
+      }
+      for (const pageUrl of htmlCandidates) {
+        try {
+          const text = await fetchWithTimeout(jinaReaderUrl(pageUrl), 15000);
+          const items = parseReaderLatest(text, pageUrl);
+          if (items.length) return items;
+        } catch (error) {}
+      }
+      return [];
+    }
+
     async function checkSourceUpdate(source) {
       const id = sourceId(source);
       updateStates[id] = { status: "checking" };
       renderList();
-      for (const feedUrl of source.feeds || []) {
-        try {
-          const xml = await fetchFeedText(feedUrl);
-          const items = parseFeed(xml, source.url);
-          const latest = items[0];
-          if (!latest) continue;
+      const attemptedFeeds = new Set();
+
+      async function tryFeeds(feedUrls) {
+        for (const feedUrl of uniqueUrls(feedUrls)) {
+          if (attemptedFeeds.has(feedUrl)) continue;
+          attemptedFeeds.add(feedUrl);
+          try {
+            const items = await fetchFeedItems(feedUrl, source.url);
+            const latest = items[0];
+            if (!latest) continue;
+            const age = Date.now() - latest.publishedAt;
+            updateStates[id] = age >= 0 && age <= recentWindowMs
+              ? { status: "recent", title: latest.title, link: latest.link, publishedAt: latest.publishedAt, method: "feed", feed: feedUrl }
+              : { status: "stale", title: latest.title, link: latest.link, publishedAt: latest.publishedAt, method: "feed", feed: feedUrl };
+            saveUpdateCache();
+            renderList();
+            return true;
+          } catch (error) {
+            // Try the next candidate feed quietly.
+          }
+        }
+        return false;
+      }
+
+      if (await tryFeeds(source.feeds || [])) return;
+
+      try {
+        const discoveredFeeds = await discoverFeedUrls(source);
+        if (await tryFeeds(discoveredFeeds)) return;
+      } catch (error) {}
+
+      if (await tryFeeds(commonFeedCandidates(source))) return;
+
+      try {
+        const pageItems = await fetchPageLatest(source);
+        const latest = pageItems[0];
+        if (latest) {
           const age = Date.now() - latest.publishedAt;
           updateStates[id] = age >= 0 && age <= recentWindowMs
-            ? { status: "recent", title: latest.title, link: latest.link, publishedAt: latest.publishedAt, feed: feedUrl }
-            : { status: "stale", title: latest.title, link: latest.link, publishedAt: latest.publishedAt, feed: feedUrl };
+            ? { status: "recent", title: latest.title, link: latest.link, publishedAt: latest.publishedAt, method: "page" }
+            : { status: "stale", title: latest.title, link: latest.link, publishedAt: latest.publishedAt, method: "page" };
           saveUpdateCache();
           renderList();
           return;
-        } catch (error) {
-          // Try the next candidate feed quietly.
         }
-      }
-      updateStates[id] = { status: "failed" };
+      } catch (error) {}
+      updateStates[id] = { status: "failed", checkedAt: Date.now() };
       saveUpdateCache();
       renderList();
     }
 
     async function checkRecentUpdates(options = {}) {
+      if (!options.force && await loadRemoteUpdates()) {
+        return;
+      }
       if (!options.force && loadUpdateCache()) {
         renderList();
         return;
