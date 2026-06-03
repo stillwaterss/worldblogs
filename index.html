@@ -454,19 +454,20 @@
       { name: "Thinking Machines Blog", zhName: "Thinking Machines 博客", url: "https://thinkingmachines.ai/blog/", category: "AI Research", zhCategory: "AI 研究", zhSummary: "前沿 AI 研究、交互模型、人机协作和智能系统设计思考。", feeds: ["https://thinkingmachines.ai/blog/rss.xml", "https://thinkingmachines.ai/blog/feed.xml"] },
       { name: "All Things Distributed", zhName: "分布式系统笔记", url: "https://www.allthingsdistributed.com/", category: "Cloud / Engineering", zhCategory: "云计算 / 工程", zhSummary: "AWS 技术领导者关于云计算、分布式系统和工程基础设施的文章。", feeds: ["https://www.allthingsdistributed.com/atom.xml", "https://www.allthingsdistributed.com/rss.xml"] },
       { name: "Benedict Evans", zhName: "Benedict Evans 科技分析", url: "https://www.ben-evans.com/", category: "Tech Analysis", zhCategory: "科技分析", zhSummary: "关于科技趋势、移动互联网、AI、平台和商业变化的宏观分析。", feeds: ["https://www.ben-evans.com/benedictevans?format=rss", "https://www.ben-evans.com/rss"] },
-      { name: "Dwarkesh Patel Podcast", zhName: "Dwarkesh Patel 播客", url: "https://www.dwarkeshpatel.com/podcast", category: "Podcast / AI", zhCategory: "播客 / AI", zhSummary: "高质量长访谈，常覆盖 AI、经济学、科学研究和思想人物。", feeds: ["https://www.dwarkeshpatel.com/feed", "https://www.dwarkeshpatel.com/podcast/rss"] },
+      { name: "Dwarkesh Patel Podcast", zhName: "Dwarkesh Patel 播客", url: "https://www.dwarkeshpatel.com/podcast", category: "Podcast / AI", zhCategory: "播客 / AI", zhSummary: "高质量长访谈，常覆盖 AI、经济学、科学研究和思想人物。", feeds: ["https://www.dwarkeshpatel.com/feed", "https://www.dwarkeshpatel.com/podcast/rss", "https://www.dwarkesh.com/feed"], fallbackPages: ["https://www.dwarkesh.com/"] },
       { name: "Exponential View", zhName: "指数视角", url: "https://www.exponentialview.co/", category: "Technology / Society", zhCategory: "技术 / 社会", zhSummary: "Azeem Azhar 对技术加速、AI、经济和社会影响的分析。", feeds: ["https://www.exponentialview.co/feed"] },
       { name: "Latent Space", zhName: "Latent Space", url: "https://www.latent.space/", category: "AI Engineering", zhCategory: "AI 工程", zhSummary: "面向 AI 工程师和创业者，关注模型、代理、开发者生态和应用落地。", feeds: ["https://www.latent.space/feed"] },
-      { name: "WIRED", zhName: "连线杂志", url: "https://www.wired.com/", category: "Technology News", zhCategory: "科技新闻", zhSummary: "全球科技新闻、深度报道和未来趋势观察。", feeds: ["https://www.wired.com/feed/rss"] }
+      { name: "WIRED", zhName: "连线杂志", url: "https://www.wired.com/", category: "Technology News", zhCategory: "科技新闻", zhSummary: "全球科技新闻、深度报道和未来趋势观察。", feeds: ["https://www.wired.com/feed/rss", "https://www.wired.com/feed/tag/ai/latest/rss", "https://www.wired.com/feed/category/science/latest/rss", "https://www.wired.com/feed/category/business/latest/rss"] }
     ];
 
     const categories = ["全部", "AI", "商业", "工程", "数据", "播客", "半导体", "哲学"];
     let activeCategory = "全部";
     let query = "";
     let updateStates = {};
-    const updateCacheKey = "worldblogs_recent_updates_v2";
+    const updateCacheKey = "worldblogs_recent_updates_v3";
     const cacheMaxAge = 30 * 60 * 1000;
     const recentWindowMs = 24 * 60 * 60 * 1000;
+    let repairInProgress = false;
 
     const list = document.getElementById("list");
     const chips = document.getElementById("chips");
@@ -674,11 +675,16 @@
     function updateSummaryMarkup() {
       const states = Object.values(updateStates);
       const recent = states.filter(item => item.status === "recent").length;
+      const failed = states.filter(item => item.status === "failed").length;
+      const checking = states.filter(item => item.status === "checking").length;
       const checked = states.filter(item => item.status && item.status !== "checking").length;
       const total = sources.length;
-      const text = checked < total
+      let text = checked < total || checking
         ? `正在按中国时间检查 24 小时内更新：已完成 ${checked}/${total}`
         : `24 小时内有 ${recent} 个来源更新，已完成 ${total}/${total} 个来源检查`;
+      if (failed && !checking) {
+        text += `，${failed} 个来源将继续用浏览器端兜底`;
+      }
       return `
         <div class="update-summary">
           <span><strong>更新雷达</strong> · ${text}</span>
@@ -776,6 +782,13 @@
       } catch (error) {}
     }
 
+    function unresolvedSources() {
+      return sources.filter(source => {
+        const state = updateStates[sourceId(source)];
+        return !state || state.status === "failed";
+      });
+    }
+
     async function loadRemoteUpdates() {
       try {
         const response = await fetch(`updates.json?t=${Date.now()}`, { cache: "no-store" });
@@ -787,6 +800,7 @@
         updateStates = payload.states;
         saveUpdateCache();
         renderList();
+        repairUnresolvedUpdates();
         return true;
       } catch (error) {
         return false;
@@ -1166,18 +1180,9 @@
       renderList();
     }
 
-    async function checkRecentUpdates(options = {}) {
-      if (!options.force && await loadRemoteUpdates()) {
-        return;
-      }
-      if (!options.force && loadUpdateCache()) {
-        renderList();
-        return;
-      }
-      updateStates = Object.fromEntries(sources.map(source => [sourceId(source), { status: "checking" }]));
-      renderList();
-      const queue = [...sources];
-      const workers = Array.from({ length: 4 }, async () => {
+    async function checkSources(sourceList, concurrency = 4) {
+      const queue = [...sourceList];
+      const workers = Array.from({ length: Math.min(concurrency, Math.max(queue.length, 1)) }, async () => {
         while (queue.length) {
           const source = queue.shift();
           await checkSourceUpdate(source);
@@ -1186,6 +1191,32 @@
       await Promise.all(workers);
       saveUpdateCache();
       renderList();
+    }
+
+    async function repairUnresolvedUpdates() {
+      if (repairInProgress) return;
+      const targets = unresolvedSources();
+      if (!targets.length) return;
+      repairInProgress = true;
+      try {
+        await checkSources(targets, 3);
+      } finally {
+        repairInProgress = false;
+      }
+    }
+
+    async function checkRecentUpdates(options = {}) {
+      if (!options.force && await loadRemoteUpdates()) {
+        return;
+      }
+      if (!options.force && loadUpdateCache()) {
+        renderList();
+        repairUnresolvedUpdates();
+        return;
+      }
+      updateStates = Object.fromEntries(sources.map(source => [sourceId(source), { status: "checking" }]));
+      renderList();
+      await checkSources(sources, 4);
     }
 
     renderChips();
