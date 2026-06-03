@@ -232,6 +232,82 @@
       -webkit-box-orient: vertical;
       overflow: hidden;
     }
+    .update-row {
+      min-height: 28px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+    .update-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      width: fit-content;
+      max-width: 100%;
+      border-radius: 999px;
+      border: 1px solid #e5e7eb;
+      background: #f8fafc;
+      color: #64748b;
+      padding: 5px 9px;
+      font-size: 12px;
+      line-height: 1.25;
+      white-space: nowrap;
+    }
+    .update-pill::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: #94a3b8;
+      flex: 0 0 auto;
+    }
+    .update-pill.checking::before {
+      background: #60a5fa;
+      box-shadow: 0 0 0 4px rgba(96, 165, 250, .14);
+    }
+    .update-pill.recent {
+      border-color: #bbf7d0;
+      background: #f0fdf4;
+      color: #15803d;
+      font-weight: 700;
+    }
+    .update-pill.recent::before {
+      background: #22c55e;
+      box-shadow: 0 0 0 4px rgba(34, 197, 94, .16);
+    }
+    .update-pill.stale {
+      background: #f8fafc;
+      color: #64748b;
+    }
+    .update-pill.failed {
+      border-color: #fde68a;
+      background: #fffbeb;
+      color: #a16207;
+    }
+    .latest-tip {
+      display: none;
+      border: 1px solid #bbf7d0;
+      border-radius: 12px;
+      padding: 7px 9px;
+      background: linear-gradient(180deg, #f0fdf4, #ffffff);
+      color: #166534;
+      font-size: 12px;
+      line-height: 1.45;
+      overflow: hidden;
+    }
+    .latest-tip.show { display: block; }
+    .latest-tip a {
+      color: #14532d;
+      font-weight: 700;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+    .latest-time {
+      color: #15803d;
+      font-weight: 500;
+      margin-top: 2px;
+    }
     .actions {
       display: flex;
       gap: 8px;
@@ -279,6 +355,30 @@
       border: 1px dashed var(--line);
       border-radius: 18px;
     }
+    .update-summary {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 12px;
+      border: 1px solid #dbeafe;
+      border-radius: 14px;
+      background: rgba(239, 246, 255, .78);
+      color: #1e3a8a;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .update-summary strong { color: #0f172a; }
+    .update-summary button {
+      border: 1px solid #bfdbfe;
+      border-radius: 999px;
+      background: #fff;
+      color: #1559c9;
+      padding: 6px 10px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
 
     @media (max-width: 820px) {
       .topbar-inner { align-items: flex-start; }
@@ -300,6 +400,8 @@
       .badge { display: inline-block; margin-top: 6px; }
       .summary { -webkit-line-clamp: 3; font-size: 14px; }
       .actions { margin-top: 2px; }
+      .update-summary { display: block; }
+      .update-summary button { margin-top: 8px; }
     }
   </style>
 </head>
@@ -336,31 +438,35 @@
 
   <script>
     const sources = [
-      { name: "a16z News & Content", zhName: "a16z 新闻与内容", url: "https://a16z.com/news-content/", category: "VC / AI / Business", zhCategory: "风投 / AI / 商业", zhSummary: "硅谷顶级风投 a16z 的 AI、创业、商业模式和技术投资观察。" },
-      { name: "Big Think", zhName: "大思考", url: "https://bigthink.com/", category: "Ideas / Science", zhCategory: "思想 / 科学", zhSummary: "跨学科思想、科学、心理学和社会趋势内容，适合拓展认知边界。" },
-      { name: "Epoch AI", zhName: "Epoch AI", url: "https://epoch.ai/", category: "AI Research", zhCategory: "AI 研究", zhSummary: "跟踪 AI 算力、模型能力、训练成本和长期趋势的研究机构。" },
-      { name: "Gwern", zhName: "Gwern 研究笔记", url: "https://gwern.net/", category: "Research Notes", zhCategory: "研究笔记", zhSummary: "高密度长期研究笔记，覆盖 AI、心理学、统计、文化和技术。" },
-      { name: "Import AI", zhName: "Import AI 周报", url: "https://jack-clark.net/", category: "AI Newsletter", zhCategory: "AI 周报", zhSummary: "Jack Clark 的 AI 政策、产业、模型能力和风险追踪周报。" },
-      { name: "Antikythera Journal", zhName: "Antikythera 期刊", url: "https://journal.antikythera.org/", category: "Philosophy / Technology", zhCategory: "哲学 / 技术", zhSummary: "讨论技术、哲学、治理和社会系统的深度文章。" },
-      { name: "Andrej Karpathy", zhName: "Karpathy 博客", url: "https://karpathy.bearblog.dev/", category: "AI / Engineering", zhCategory: "AI / 工程", zhSummary: "Andrej Karpathy 关于 AI 工程、模型、学习方法和技术判断的文章。" },
-      { name: "Lex Fridman Podcast", zhName: "Lex Fridman 播客", url: "https://lexfridman.com/podcast", category: "Podcast", zhCategory: "播客", zhSummary: "长访谈节目，覆盖 AI、科学、技术、哲学和重要人物。" },
-      { name: "Our World in Data", zhName: "用数据看世界", url: "https://ourworldindata.org/", category: "Data / Society", zhCategory: "数据 / 社会", zhSummary: "用可视化数据理解全球发展、经济、健康、人口、能源和技术。" },
-      { name: "SemiAnalysis", zhName: "半导体分析", url: "https://semianalysis.com/", category: "Semiconductors / AI Infra", zhCategory: "半导体 / AI 基础设施", zhSummary: "AI 芯片、数据中心、GPU、算力供应链和半导体产业深度分析。" },
-      { name: "Sequoia Training Data", zhName: "红杉 Training Data", url: "https://sequoiacap.com/series/training-data/", category: "AI / Startups", zhCategory: "AI / 创业", zhSummary: "红杉资本关于 AI 创业、产品、模型和市场变化的系列内容。" },
-      { name: "Situational Awareness", zhName: "态势感知", url: "https://situational-awareness.ai/", category: "AI Strategy", zhCategory: "AI 战略", zhSummary: "关于 AI 发展速度、战略竞争、安全和未来格局的重要分析。" },
-      { name: "Stratechery", zhName: "Stratechery 战略分析", url: "https://stratechery.com/", category: "Strategy / Tech", zhCategory: "科技 / 商业战略", zhSummary: "Ben Thompson 的科技商业模式、平台战略和产业结构分析。" },
-      { name: "Thinking Machines Blog", zhName: "Thinking Machines 博客", url: "https://thinkingmachines.ai/blog/", category: "AI Research", zhCategory: "AI 研究", zhSummary: "前沿 AI 研究、交互模型、人机协作和智能系统设计思考。" },
-      { name: "All Things Distributed", zhName: "分布式系统笔记", url: "https://www.allthingsdistributed.com/", category: "Cloud / Engineering", zhCategory: "云计算 / 工程", zhSummary: "AWS 技术领导者关于云计算、分布式系统和工程基础设施的文章。" },
-      { name: "Benedict Evans", zhName: "Benedict Evans 科技分析", url: "https://www.ben-evans.com/", category: "Tech Analysis", zhCategory: "科技分析", zhSummary: "关于科技趋势、移动互联网、AI、平台和商业变化的宏观分析。" },
-      { name: "Dwarkesh Patel Podcast", zhName: "Dwarkesh Patel 播客", url: "https://www.dwarkeshpatel.com/podcast", category: "Podcast / AI", zhCategory: "播客 / AI", zhSummary: "高质量长访谈，常覆盖 AI、经济学、科学研究和思想人物。" },
-      { name: "Exponential View", zhName: "指数视角", url: "https://www.exponentialview.co/", category: "Technology / Society", zhCategory: "技术 / 社会", zhSummary: "Azeem Azhar 对技术加速、AI、经济和社会影响的分析。" },
-      { name: "Latent Space", zhName: "Latent Space", url: "https://www.latent.space/", category: "AI Engineering", zhCategory: "AI 工程", zhSummary: "面向 AI 工程师和创业者，关注模型、代理、开发者生态和应用落地。" },
-      { name: "WIRED", zhName: "连线杂志", url: "https://www.wired.com/", category: "Technology News", zhCategory: "科技新闻", zhSummary: "全球科技新闻、深度报道和未来趋势观察。" }
+      { name: "a16z News & Content", zhName: "a16z 新闻与内容", url: "https://a16z.com/news-content/", category: "VC / AI / Business", zhCategory: "风投 / AI / 商业", zhSummary: "硅谷顶级风投 a16z 的 AI、创业、商业模式和技术投资观察。", feeds: ["https://a16z.com/feed/"] },
+      { name: "Big Think", zhName: "大思考", url: "https://bigthink.com/", category: "Ideas / Science", zhCategory: "思想 / 科学", zhSummary: "跨学科思想、科学、心理学和社会趋势内容，适合拓展认知边界。", feeds: ["https://bigthink.com/feed/"] },
+      { name: "Epoch AI", zhName: "Epoch AI", url: "https://epoch.ai/", category: "AI Research", zhCategory: "AI 研究", zhSummary: "跟踪 AI 算力、模型能力、训练成本和长期趋势的研究机构。", feeds: ["https://epoch.ai/rss.xml", "https://epoch.ai/feed.xml"] },
+      { name: "Gwern", zhName: "Gwern 研究笔记", url: "https://gwern.net/", category: "Research Notes", zhCategory: "研究笔记", zhSummary: "高密度长期研究笔记，覆盖 AI、心理学、统计、文化和技术。", feeds: ["https://gwern.net/index.atom", "https://gwern.net/feed.atom"] },
+      { name: "Import AI", zhName: "Import AI 周报", url: "https://jack-clark.net/", category: "AI Newsletter", zhCategory: "AI 周报", zhSummary: "Jack Clark 的 AI 政策、产业、模型能力和风险追踪周报。", feeds: ["https://jack-clark.net/feed/"] },
+      { name: "Antikythera Journal", zhName: "Antikythera 期刊", url: "https://journal.antikythera.org/", category: "Philosophy / Technology", zhCategory: "哲学 / 技术", zhSummary: "讨论技术、哲学、治理和社会系统的深度文章。", feeds: ["https://journal.antikythera.org/feed.xml", "https://journal.antikythera.org/rss.xml"] },
+      { name: "Andrej Karpathy", zhName: "Karpathy 博客", url: "https://karpathy.bearblog.dev/", category: "AI / Engineering", zhCategory: "AI / 工程", zhSummary: "Andrej Karpathy 关于 AI 工程、模型、学习方法和技术判断的文章。", feeds: ["https://karpathy.bearblog.dev/feed/"] },
+      { name: "Lex Fridman Podcast", zhName: "Lex Fridman 播客", url: "https://lexfridman.com/podcast", category: "Podcast", zhCategory: "播客", zhSummary: "长访谈节目，覆盖 AI、科学、技术、哲学和重要人物。", feeds: ["https://lexfridman.com/feed/podcast/", "https://lexfridman.com/feed/"] },
+      { name: "Our World in Data", zhName: "用数据看世界", url: "https://ourworldindata.org/", category: "Data / Society", zhCategory: "数据 / 社会", zhSummary: "用可视化数据理解全球发展、经济、健康、人口、能源和技术。", feeds: ["https://ourworldindata.org/atom.xml", "https://ourworldindata.org/feed.xml"] },
+      { name: "SemiAnalysis", zhName: "半导体分析", url: "https://semianalysis.com/", category: "Semiconductors / AI Infra", zhCategory: "半导体 / AI 基础设施", zhSummary: "AI 芯片、数据中心、GPU、算力供应链和半导体产业深度分析。", feeds: ["https://semianalysis.com/feed/"] },
+      { name: "Sequoia Training Data", zhName: "红杉 Training Data", url: "https://sequoiacap.com/series/training-data/", category: "AI / Startups", zhCategory: "AI / 创业", zhSummary: "红杉资本关于 AI 创业、产品、模型和市场变化的系列内容。", feeds: ["https://sequoiacap.com/feed/"] },
+      { name: "Situational Awareness", zhName: "态势感知", url: "https://situational-awareness.ai/", category: "AI Strategy", zhCategory: "AI 战略", zhSummary: "关于 AI 发展速度、战略竞争、安全和未来格局的重要分析。", feeds: ["https://situational-awareness.ai/feed.xml", "https://situational-awareness.ai/rss.xml"] },
+      { name: "Stratechery", zhName: "Stratechery 战略分析", url: "https://stratechery.com/", category: "Strategy / Tech", zhCategory: "科技 / 商业战略", zhSummary: "Ben Thompson 的科技商业模式、平台战略和产业结构分析。", feeds: ["https://stratechery.com/feed/"] },
+      { name: "Thinking Machines Blog", zhName: "Thinking Machines 博客", url: "https://thinkingmachines.ai/blog/", category: "AI Research", zhCategory: "AI 研究", zhSummary: "前沿 AI 研究、交互模型、人机协作和智能系统设计思考。", feeds: ["https://thinkingmachines.ai/blog/rss.xml", "https://thinkingmachines.ai/blog/feed.xml"] },
+      { name: "All Things Distributed", zhName: "分布式系统笔记", url: "https://www.allthingsdistributed.com/", category: "Cloud / Engineering", zhCategory: "云计算 / 工程", zhSummary: "AWS 技术领导者关于云计算、分布式系统和工程基础设施的文章。", feeds: ["https://www.allthingsdistributed.com/atom.xml", "https://www.allthingsdistributed.com/rss.xml"] },
+      { name: "Benedict Evans", zhName: "Benedict Evans 科技分析", url: "https://www.ben-evans.com/", category: "Tech Analysis", zhCategory: "科技分析", zhSummary: "关于科技趋势、移动互联网、AI、平台和商业变化的宏观分析。", feeds: ["https://www.ben-evans.com/benedictevans?format=rss", "https://www.ben-evans.com/rss"] },
+      { name: "Dwarkesh Patel Podcast", zhName: "Dwarkesh Patel 播客", url: "https://www.dwarkeshpatel.com/podcast", category: "Podcast / AI", zhCategory: "播客 / AI", zhSummary: "高质量长访谈，常覆盖 AI、经济学、科学研究和思想人物。", feeds: ["https://www.dwarkeshpatel.com/feed", "https://www.dwarkeshpatel.com/podcast/rss"] },
+      { name: "Exponential View", zhName: "指数视角", url: "https://www.exponentialview.co/", category: "Technology / Society", zhCategory: "技术 / 社会", zhSummary: "Azeem Azhar 对技术加速、AI、经济和社会影响的分析。", feeds: ["https://www.exponentialview.co/feed"] },
+      { name: "Latent Space", zhName: "Latent Space", url: "https://www.latent.space/", category: "AI Engineering", zhCategory: "AI 工程", zhSummary: "面向 AI 工程师和创业者，关注模型、代理、开发者生态和应用落地。", feeds: ["https://www.latent.space/feed"] },
+      { name: "WIRED", zhName: "连线杂志", url: "https://www.wired.com/", category: "Technology News", zhCategory: "科技新闻", zhSummary: "全球科技新闻、深度报道和未来趋势观察。", feeds: ["https://www.wired.com/feed/rss"] }
     ];
 
     const categories = ["全部", "AI", "商业", "工程", "数据", "播客", "半导体", "哲学"];
     let activeCategory = "全部";
     let query = "";
+    let updateStates = {};
+    const updateCacheKey = "worldblogs_recent_updates_v1";
+    const cacheMaxAge = 30 * 60 * 1000;
+    const recentWindowMs = 24 * 60 * 60 * 1000;
 
     const list = document.getElementById("list");
     const chips = document.getElementById("chips");
@@ -512,6 +618,75 @@
       return key.includes(query.toLowerCase());
     }
 
+    function sourceId(source) {
+      return host(source.url);
+    }
+
+    function escapeHtml(value) {
+      return String(value || "").replace(/[&<>"']/g, char => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+      }[char]));
+    }
+
+    function truncate(value, limit = 46) {
+      const text = String(value || "").replace(/\s+/g, " ").trim();
+      return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
+    }
+
+    function chinaTime(date) {
+      return new Intl.DateTimeFormat("zh-CN", {
+        timeZone: "Asia/Shanghai",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false
+      }).format(date);
+    }
+
+    function updateStateMarkup(source) {
+      const state = updateStates[sourceId(source)] || { status: "checking" };
+      if (state.status === "recent") {
+        const title = escapeHtml(truncate(state.title, 54));
+        const link = escapeHtml(state.link || source.url);
+        const time = chinaTime(new Date(state.publishedAt));
+        return `
+          <div class="update-row"><span class="update-pill recent">24小时内更新</span></div>
+          <div class="latest-tip show">
+            新文章：<a href="${link}" target="_blank" rel="noopener">${title}</a>
+            <div class="latest-time">中国时间 ${time}</div>
+          </div>
+        `;
+      }
+      if (state.status === "stale") {
+        return `<div class="update-row"><span class="update-pill stale">24h 暂无更新</span></div>`;
+      }
+      if (state.status === "failed") {
+        return `<div class="update-row"><span class="update-pill failed">暂未取到更新</span></div>`;
+      }
+      return `<div class="update-row"><span class="update-pill checking">正在检查更新</span></div>`;
+    }
+
+    function updateSummaryMarkup() {
+      const states = Object.values(updateStates);
+      const recent = states.filter(item => item.status === "recent").length;
+      const checked = states.filter(item => item.status && item.status !== "checking").length;
+      const total = sources.length;
+      const text = checked < total
+        ? `正在按中国时间检查 24 小时内更新：已完成 ${checked}/${total}`
+        : `24 小时内有 ${recent} 个来源更新，已完成 ${total}/${total} 个来源检查`;
+      return `
+        <div class="update-summary">
+          <span><strong>更新雷达</strong> · ${text}</span>
+          <button id="refreshUpdates" type="button">重新检查</button>
+        </div>
+      `;
+    }
+
     function renderChips() {
       chips.innerHTML = categories.map(cat => `<button class="chip ${cat === activeCategory ? "active" : ""}" data-cat="${cat}">${cat}</button>`).join("");
       chips.querySelectorAll(".chip").forEach(chip => {
@@ -530,7 +705,7 @@
         return;
       }
 
-      list.innerHTML = filtered.map((source, index) => `
+      list.innerHTML = updateSummaryMarkup() + filtered.map((source, index) => `
         <article class="card" data-url="${source.url}">
           <a class="cover" href="${source.url}" target="_blank" rel="noopener" title="打开 ${source.zhName}">
             <canvas data-index="${sources.indexOf(source)}"></canvas>
@@ -542,6 +717,7 @@
             </div>
             <div class="meta">${source.category} · ${host(source.url)}</div>
             <div class="summary">${source.zhSummary}</div>
+            ${updateStateMarkup(source)}
             <div class="actions">
               <a class="open-link" href="${source.url}" target="_blank" rel="noopener">打开原网页</a>
               <button class="copy-link" data-url="${source.url}">复制链接</button>
@@ -563,6 +739,10 @@
           window.open(card.dataset.url, "_blank", "noopener");
         });
       });
+      const refresh = document.getElementById("refreshUpdates");
+      if (refresh) {
+        refresh.addEventListener("click", () => checkRecentUpdates({ force: true }));
+      }
     }
 
     document.getElementById("searchInput").addEventListener("input", event => {
@@ -579,8 +759,134 @@
       window.open("https://bigthink.com/", "_blank", "noopener");
     });
 
+    function loadUpdateCache() {
+      try {
+        const cached = JSON.parse(localStorage.getItem(updateCacheKey) || "{}");
+        if (cached.savedAt && Date.now() - cached.savedAt < cacheMaxAge && cached.states) {
+          updateStates = cached.states;
+          return true;
+        }
+      } catch (error) {}
+      return false;
+    }
+
+    function saveUpdateCache() {
+      try {
+        localStorage.setItem(updateCacheKey, JSON.stringify({ savedAt: Date.now(), states: updateStates }));
+      } catch (error) {}
+    }
+
+    function proxiedUrl(url) {
+      return `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+    }
+
+    async function fetchWithTimeout(url, timeout = 11000) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeout);
+      try {
+        const response = await fetch(url, { signal: controller.signal, cache: "no-store" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.text();
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
+    async function fetchFeedText(feedUrl) {
+      const attempts = [feedUrl, proxiedUrl(feedUrl)];
+      let lastError;
+      for (const url of attempts) {
+        try {
+          return await fetchWithTimeout(url);
+        } catch (error) {
+          lastError = error;
+        }
+      }
+      throw lastError || new Error("无法读取 feed");
+    }
+
+    function nodeText(node, selectors) {
+      for (const selector of selectors) {
+        const found = node.querySelector(selector);
+        if (found && found.textContent.trim()) return found.textContent.trim();
+      }
+      return "";
+    }
+
+    function itemLink(node) {
+      const atomLink = node.querySelector("link[href]");
+      if (atomLink) return atomLink.getAttribute("href") || "";
+      const rssLink = node.querySelector("link");
+      if (rssLink && rssLink.textContent.trim()) return rssLink.textContent.trim();
+      return "";
+    }
+
+    function parseFeed(xmlText, sourceUrl) {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(xmlText, "application/xml");
+      if (doc.querySelector("parsererror")) throw new Error("feed 解析失败");
+      const nodes = [...doc.querySelectorAll("item, entry")];
+      const base = new URL(sourceUrl);
+      return nodes.map(node => {
+        const title = nodeText(node, ["title"]);
+        const rawLink = itemLink(node);
+        const rawDate = nodeText(node, ["pubDate", "published", "updated", "dc\\:date", "date"]);
+        const publishedAt = rawDate ? Date.parse(rawDate) : NaN;
+        let link = rawLink || sourceUrl;
+        try { link = new URL(link, base).href; } catch (error) {}
+        return { title, link, publishedAt };
+      }).filter(item => item.title && Number.isFinite(item.publishedAt))
+        .sort((a, b) => b.publishedAt - a.publishedAt);
+    }
+
+    async function checkSourceUpdate(source) {
+      const id = sourceId(source);
+      updateStates[id] = { status: "checking" };
+      renderList();
+      for (const feedUrl of source.feeds || []) {
+        try {
+          const xml = await fetchFeedText(feedUrl);
+          const items = parseFeed(xml, source.url);
+          const latest = items[0];
+          if (!latest) continue;
+          const age = Date.now() - latest.publishedAt;
+          updateStates[id] = age >= 0 && age <= recentWindowMs
+            ? { status: "recent", title: latest.title, link: latest.link, publishedAt: latest.publishedAt, feed: feedUrl }
+            : { status: "stale", title: latest.title, link: latest.link, publishedAt: latest.publishedAt, feed: feedUrl };
+          saveUpdateCache();
+          renderList();
+          return;
+        } catch (error) {
+          // Try the next candidate feed quietly.
+        }
+      }
+      updateStates[id] = { status: "failed" };
+      saveUpdateCache();
+      renderList();
+    }
+
+    async function checkRecentUpdates(options = {}) {
+      if (!options.force && loadUpdateCache()) {
+        renderList();
+        return;
+      }
+      updateStates = Object.fromEntries(sources.map(source => [sourceId(source), { status: "checking" }]));
+      renderList();
+      const queue = [...sources];
+      const workers = Array.from({ length: 4 }, async () => {
+        while (queue.length) {
+          const source = queue.shift();
+          await checkSourceUpdate(source);
+        }
+      });
+      await Promise.all(workers);
+      saveUpdateCache();
+      renderList();
+    }
+
     renderChips();
     renderList();
+    checkRecentUpdates();
   </script>
 </body>
 </html>
